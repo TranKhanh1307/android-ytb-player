@@ -8,12 +8,14 @@ import android.util.Log
 import android.view.View
 import android.view.ViewGroup
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -32,6 +34,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.app.ComponentActivity
@@ -53,23 +56,42 @@ private const val TAG = "VideoPlayer"
 
 @Composable
 fun PlayerScreen(modifier: Modifier = Modifier) {
-    Column(modifier = modifier) {
-        VideoPlayer()
+    VideoPlayer(modifier = modifier)
+}
+
+@Composable
+fun VideoPlayer(modifier: Modifier = Modifier) {
+
+
+    Column(
+        modifier = modifier
+    ) {
+        CustomVidPlayer()
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .background(Color.Cyan),
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text("Place the rest UI here", color = Color.Black)
+        }
     }
 }
 
 @SuppressLint("RestrictedApi")
 @Composable
-fun VideoPlayer(modifier: Modifier = Modifier) {
+fun CustomVidPlayer(modifier: Modifier = Modifier) {
     val videoId = "YkGRfvn3RUU"
     val lifecycleOwner = LocalLifecycleOwner.current
     var playbackPosition by rememberSaveable { mutableFloatStateOf(0f) }
     val context = LocalContext.current
-    val orientation = remember { mutableIntStateOf(context.resources.configuration.orientation) }
     val activity = context as? Activity // only needed for fullscreen support, otherwise remove
+    val orientation = remember { mutableIntStateOf(context.resources.configuration.orientation) }
     var customView: View? = null // only needed for fullscreen support, otherwise remove
-
     val configuration = LocalConfiguration.current
+
     LaunchedEffect(configuration) {
         orientation.intValue = configuration.orientation
     }
@@ -96,82 +118,74 @@ fun VideoPlayer(modifier: Modifier = Modifier) {
     val isWifiConnected = remember { mutableStateOf(checkIfWifiConnected(context)) }
     val coroutineScope = rememberCoroutineScope()
 
-    Box(
-        contentAlignment = Alignment.Center,
+    AndroidView(
         modifier = modifier
-            .fillMaxSize()
-            .background(Color.Black)
-    ) {
-        AndroidView(
-            modifier = Modifier
-                .then(if (isLandscape) Modifier.fillMaxHeight() else Modifier.fillMaxWidth())
-                .aspectRatio(16f / 9f)
-                .align(Alignment.Center),
-            factory = { context ->
+            .aspectRatio(16f / 9f),
+        factory = { context ->
+            YouTubePlayerView(context).apply {
+                enableAutomaticInitialization = false
+                lifecycleOwner.lifecycle.addObserver(this)
 
-                YouTubePlayerView(context).apply {
-                    enableAutomaticInitialization = false
-                    lifecycleOwner.lifecycle.addObserver(this)
+                val iFramePlayerOptions = IFramePlayerOptions.Builder()
+                    .controls(1)
+                    .fullscreen(1)
+                    .build()
 
-                    val iFramePlayerOptions = IFramePlayerOptions.Builder()
-                        .controls(1)
-                        .fullscreen(1)
-                        .build()
+                initialize(object : AbstractYouTubePlayerListener() {
+                    override fun onReady(youTubePlayer: YouTubePlayer) {
+                        youTubePlayer.loadVideo(videoId, playbackPosition)
 
-                    initialize(object : AbstractYouTubePlayerListener() {
-                        override fun onReady(youTubePlayer: YouTubePlayer) {
-                            youTubePlayer.loadVideo(videoId, playbackPosition)
-
-                            if (isWifiConnected.value) {
-                                coroutineScope.launch {
-                                    delay(500)
-                                    youTubePlayer.loadVideo(videoId, playbackPosition)
-                                }
+                        if (isWifiConnected.value) {
+                            coroutineScope.launch {
+                                delay(500)
+                                youTubePlayer.loadVideo(videoId, playbackPosition)
                             }
                         }
+                    }
 
-                        override fun onCurrentSecond(youTubePlayer: YouTubePlayer, second: Float) {
-                            playbackPosition = second
-                        }
-                    }, true, iFramePlayerOptions)
+                    override fun onCurrentSecond(youTubePlayer: YouTubePlayer, second: Float) {
+                        playbackPosition = second
+                    }
+                }, true, iFramePlayerOptions)
 
-                    addFullscreenListener(object : FullscreenListener {
+                addFullscreenListener(object : FullscreenListener {
 
-                        override fun onEnterFullscreen(
-                            fullscreenView: View,
-                            exitFullscreen: () -> Unit
-                        ) {
-                            Log.i(TAG, "Entered fullscreen mode")
-                            val decorView = activity?.window?.decorView as ViewGroup
+                    override fun onEnterFullscreen(
+                        fullscreenView: View,
+                        exitFullscreen: () -> Unit
+                    ) {
+                        Log.i(TAG, "Entered fullscreen mode")
+                        val decorView = activity?.window?.decorView as ViewGroup
+
+                        // can remove this if you don't want to auto rotate to landscape when fullscreen is triggered
+                        activity.requestedOrientation =
+                            ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+
+                        decorView.addView(
+                            fullscreenView,
+                            ViewGroup.LayoutParams.MATCH_PARENT,
+                            ViewGroup.LayoutParams.MATCH_PARENT
+                        )
+                        customView = fullscreenView
+                    }
+
+                    override fun onExitFullscreen() {
+                        Log.i(TAG, "Exited fullscreen mode")
+                        val decorView = activity?.window?.decorView as? ViewGroup
+                        if (customView != null && decorView != null) {
 
                             // can remove this if you don't want to auto rotate to landscape when fullscreen is triggered
-                            activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                            activity.requestedOrientation =
+                                ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
 
-                            decorView.addView(
-                                fullscreenView,
-                                ViewGroup.LayoutParams.MATCH_PARENT,
-                                ViewGroup.LayoutParams.MATCH_PARENT
-                            )
-                            customView = fullscreenView
+                            decorView.removeView(customView)
+                            customView = null
                         }
-
-                        override fun onExitFullscreen() {
-                            Log.i(TAG, "Exited fullscreen mode")
-                            val decorView = activity?.window?.decorView as? ViewGroup
-                            if (customView != null && decorView != null) {
-
-                                // can remove this if you don't want to auto rotate to landscape when fullscreen is triggered
-                                activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
-
-                                decorView.removeView(customView)
-                                customView = null
-                            }
-                        }
-                    })
-                }
+                    }
+                })
             }
-        )
-    }
+        }
+    )
 }
 
 //For reference later
@@ -187,70 +201,73 @@ fun YouTubePlayer(
     var player: YouTubePlayer? by remember { mutableStateOf(null) }
     var customView: View? = null // only needed for fullscreen support, otherwise remove
 
-    AndroidView(factory = { ctx ->
-        val youTubePlayerView = YouTubePlayerView(ctx).apply {
-            enableAutomaticInitialization = false
-            layoutParams = ViewGroup.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
-            )
+    AndroidView(
+        factory = { ctx ->
+            val youTubePlayerView = YouTubePlayerView(ctx).apply {
+                enableAutomaticInitialization = false
+                layoutParams = ViewGroup.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
+                )
 
-            lifecycleOwner.lifecycle.addObserver(this)
+                lifecycleOwner.lifecycle.addObserver(this)
 
-            val listener = object : AbstractYouTubePlayerListener() {
-                override fun onReady(youTubePlayer: YouTubePlayer) {
-                    player = youTubePlayer
-                }
-            }
-
-            val options: IFramePlayerOptions =
-                IFramePlayerOptions.Builder() //configure options as needed
-                    .controls(1)
-                    .fullscreen(1)
-                    .autoplay(0)
-                    .ivLoadPolicy(3)
-                    .build()
-
-            initialize(listener, options)
-
-            // can remove this if you don't want fullscreen
-            addFullscreenListener(object : FullscreenListener {
-                override fun onEnterFullscreen(
-                    fullscreenView: View, exitFullscreen: () -> Unit
-                ) {
-                    val decorView = activity?.window?.decorView as ViewGroup
-
-                    // can remove this if you don't want to auto rotate to landscape when fullscreen is triggered
-                    activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-
-                    decorView.addView(
-                        fullscreenView,
-                        ViewGroup.LayoutParams.MATCH_PARENT,
-                        ViewGroup.LayoutParams.MATCH_PARENT
-                    )
-                    customView = fullscreenView
-                }
-
-                override fun onExitFullscreen() {
-                    val decorView = activity?.window?.decorView as? ViewGroup
-                    if (customView != null && decorView != null) {
-
-                        // can remove this if you don't want to auto rotate to landscape when fullscreen is triggered
-                        activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
-
-                        decorView.removeView(customView)
-                        customView = null
+                val listener = object : AbstractYouTubePlayerListener() {
+                    override fun onReady(youTubePlayer: YouTubePlayer) {
+                        player = youTubePlayer
                     }
                 }
-            })
 
-        }
-        youTubePlayerView
-    }, update = {
-        //can use "loadVideo" or "cueVideo" based on preference
-        player?.loadOrCueVideo(
-            lifecycleOwner.lifecycle, videoId, 0f
-        )
-    }, modifier = modifier.fillMaxSize()
+                val options: IFramePlayerOptions =
+                    IFramePlayerOptions.Builder() //configure options as needed
+                        .controls(1)
+                        .fullscreen(1)
+                        .autoplay(0)
+                        .ivLoadPolicy(3)
+                        .build()
+
+                initialize(listener, options)
+
+                // can remove this if you don't want fullscreen
+                addFullscreenListener(object : FullscreenListener {
+                    override fun onEnterFullscreen(
+                        fullscreenView: View, exitFullscreen: () -> Unit
+                    ) {
+                        val decorView = activity?.window?.decorView as ViewGroup
+
+                        // can remove this if you don't want to auto rotate to landscape when fullscreen is triggered
+                        activity.requestedOrientation =
+                            ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+
+                        decorView.addView(
+                            fullscreenView,
+                            ViewGroup.LayoutParams.MATCH_PARENT,
+                            ViewGroup.LayoutParams.MATCH_PARENT
+                        )
+                        customView = fullscreenView
+                    }
+
+                    override fun onExitFullscreen() {
+                        val decorView = activity?.window?.decorView as? ViewGroup
+                        if (customView != null && decorView != null) {
+
+                            // can remove this if you don't want to auto rotate to landscape when fullscreen is triggered
+                            activity.requestedOrientation =
+                                ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+
+                            decorView.removeView(customView)
+                            customView = null
+                        }
+                    }
+                })
+
+            }
+            youTubePlayerView
+        }, update = {
+            //can use "loadVideo" or "cueVideo" based on preference
+            player?.loadOrCueVideo(
+                lifecycleOwner.lifecycle, videoId, 0f
+            )
+        }, modifier = modifier.fillMaxSize()
     )
 }
 
